@@ -1,0 +1,17 @@
+{
+    "contents" : "#download and import training and test data\ntracsv <- \"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv\"\ndownload.file(tracsv, destfile=paste(getwd(), \"pml-training.csv\", sep=\"/\"))\ntrain <- read.csv(paste(getwd(), \"pml-training.csv\", sep=\"/\"), header=TRUE)\ntescsv <- \"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv\"\ndownload.file(tescsv, destfile=paste(getwd(), \"pml-testing.csv\", sep=\"/\"))\ntest <- read.csv(paste(getwd(), \"pml-testing.csv\", sep=\"/\"), header=TRUE)\n\nlibrary(caret)\nset.seed(33141)\n#Create partition and remove NA columns\ninTrain <- createDataPartition(y=train$classe, p=0.60, list=FALSE)\ntraining <- train[inTrain,]\ntesting <- train[-inTrain,]\ntr <- training[,sapply(training, function(x) sum(is.na(x))) == 0]\n\n\n\n#Feature selection and preprocessing\nntr <- tr[,sapply(tr,class)==\"numeric\"]\n\n#Exclude un-predictive variables\nntrCor <- cor(ntr)\nhighCor <- findCorrelation(ntrCor, cutoff = 0.70)\nntr <- ntr[, -highCor]\nnzv <- nearZeroVar(ntr)\nntr <- ntr[,-nzv]\nntrfinal <- ntr[, sapply(ntr, sd) > 1]\n\n#Append outcome and dummy variables to final and dummy variables to test\ndumtrain <- dummyVars(~ user_name, data=training)\nuserdum <- predict(dumtrain, training)\nntrfinal <- cbind(ntrfinal, userdum)\nntrfinal$classe <- training$classe\nusertedum <- dummyVars(~user_name, data=testing)\nustesting <- predict(usertedum, testing)\ntesting <- cbind(testing, ustesting)\nusertest <- dummyVars(~ user_name, data=test)\nuserte <- predict(usertest, newdata=test)\ntest <- cbind(test, userte)\n\n\n#Model Selection\nfeModrf <- train(ntrfinal$classe ~ ., data=ntrfinal, method=\"rf\", trControl=tc)\nfeModrf\nfintesting <- predict(feModrf, testing)\nconfusionMatrix(testing$classe, fintesting)\n\n\n\n",
+    "created" : 1408568118511.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "2649715303",
+    "id" : "61B330A4",
+    "lastKnownWriteTime" : 1408812153,
+    "path" : "C:/Users/Mike/DataScience/MachLearn/MLproj/writeUp.R",
+    "project_path" : "writeUp.R",
+    "properties" : {
+        "tempName" : "Untitled1"
+    },
+    "source_on_save" : false,
+    "type" : "r_source"
+}

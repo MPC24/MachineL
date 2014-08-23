@@ -1,0 +1,94 @@
+---
+title: "Human Activity Recognition"
+author: "Michael Conway"
+date: "Friday, August 22, 2014"
+output: html_document
+---
+# Methodology
+
+## Summary of Data
+
+The HAR data contained variables measuring the movement of one of 6 subjects in incremental time windows from data collected from a accelerometer, gyroscope and magnetometer. Data from these devices was used to calculate Eular angles along with the raw directional vector data [1]. These variable along with user data, time data and summary statistics like variance and standard deviation encompassed the 160 variables and roughly 39k samples generated from the experiment. About half was provided for the analysis of this report.
+
+## Preprocessing and Feature Selection
+
+I immediately made a 60/40 split of the data into training and testing partitions based on the 'classe' variable. The summary statistics were not measured in a predictable way and only 406 summaries were recorded. After seperating them out and formulating a classification model they did show predictive power, however with only 406 samples and they being a summary of other variables I decided to move forward without them.
+
+
+```{r}
+#Install packages and download data
+library(plyr);library(ggplot2);library(lattice);library(knitr);library(randomForest);library(caret)
+train <- read.csv(paste(getwd(), "pml-training.csv", sep="/"), header=TRUE)
+test <- read.csv(paste(getwd(), "pml-testing.csv", sep="/"), header=TRUE)
+
+#Create partition and remove unwanted variables
+set.seed(33141)
+inTrain <- createDataPartition(y=train$classe, p=0.60, list=FALSE)
+training <- train[inTrain,]
+testing <- train[-inTrain,]
+
+tr <- training[,sapply(training, function(x) sum(is.na(x))) == 0]
+ntr <- tr[,sapply(tr,class)=="numeric"]
+```
+
+At this point I trained Stochastic Gradient Boosting and a Random Forest model with the 'caret' package under default settings. This was obvious overtuning, so I ran various preprocessing excersizes and retesting my results. Three Correlating predictors were removed with a threshold correlation of 0.7. Two near zero variance predictors were removed and no linear dependant variables were found. However, this still left nearly 21 variables which seemed like too many. At which point I simply looked at the standard deviation of the variables and found a huge desparity. Setting the standard deviation threshold to any variable above 1 boiled the number of variables to 17. Based on previous model training this seemed like a nice number, especially after seeing the standard deviations of the variable. 
+
+
+```{r}
+#Exclude un-predictive variables
+ntrCor <- cor(ntr)
+highCor <- findCorrelation(ntrCor, cutoff = 0.70)
+ntr <- ntr[, -highCor]
+
+ntrfinal <- ntr[, sapply(ntr, sd) > 1]
+```
+
+Logically the 'user_name' would have to impact the prediction of the outcome since body type and strength would impact at least two of the devices collecting data. I went ahead and converted the user names into dummy variables and appended them to the list of processed variables along with the 'classe' outcome variable. The idea is to improve the model, but at the very least it lowers the processing effort. Dummy variables are then appending to the 'testing' and 'test' data sets so the model can be applied.
+
+
+```{r}
+#Append outcome and dummy variables to final and dummy variables to test
+dumtrain <- dummyVars(~ user_name, data=training)
+userdum <- predict(dumtrain, training)
+ntrfinal <- cbind(ntrfinal, userdum)
+ntrfinal$classe <- training$classe
+usertedum <- dummyVars(~user_name, data=testing)
+ustesting <- predict(usertedum, testing)
+testing <- cbind(testing, ustesting)
+usertest <- dummyVars(~ user_name, data=test)
+userte <- predict(usertest, newdata=test)
+test <- cbind(test, userte)
+```
+
+## Model Selection
+
+Given the results of the initial trial and error attempts before widdling down the features and the nature of the data being so variable it seems that random forest is the way to go. Also, the default settings for random forest in the 'caret' package took way too much time even for my core i7 and 16 gigabytes of ram; therefore I scaled back the cross-validation to 4 folds. Eureka, this did the trick where the most accurate model selected 12 features for each tree with an accuracy around 0.98 in the training sample.
+
+
+
+
+
+```{r}
+tc <- trainControl(method="cv", number=4, allowParallel=TRUE)
+feModrf <- train(ntrfinal$classe ~ ., data=ntrfinal, method="rf", trControl=tc)
+feModrf
+fintesting <- predict(feModrf, testing)
+confusionMatrix(testing$classe, fintesting)
+
+
+```
+
+
+The confusion matrix shows sample error of around 1-2% on the testing set, which I think is the sweet spot since the final model developed by the researchers who performed the study came up with about the same with a similar error matrix[1]. Below are visual representation of cross-validation results and error rate relative to forest size per feature selection.
+
+```{r}
+plot(feModrf$finalModel, main="Error Rate by Tree number per Model");plot(feModrf, main="Cross-validation")
+
+```
+
+
+
+[1] Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3BAZblNMg
+
